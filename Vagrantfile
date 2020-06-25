@@ -1,0 +1,137 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# source:
+# https://ctrlnotes.com/vagrant-advanced-examples/#example-3
+
+
+ssh_key = "~/.ssh/id_rsa"
+box     = "centos/7"
+
+# Add an extra public key for remote accessing the servers
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8c3uZAc1s+uxfaKdmWbAzxhCRSesUCFKWfpdm0o7R8FKS+VUMxk8xAso+/H9jxsPfC+IO/bDeIYYAtrx/yZ7AKsucI22wvg8WEAZdaZpRbK214HRSwkVpfKNihUFi/JE0BiCScjkF1DPmfiApYZLTelJyoU68AJgaWG0i6khq+YwXI2ON5SXpPblvIASqD20LljTLjcus69ZhzoQAgWJ8ixE/eLDXnxwwqwUK8gMnCNzYblemyZ6roV4e24qjw9IE7lpc47yO3MuKoTtVMqwqzdAn1W3yMQIReChEBJYRTaJsQUFQjBr+jELkbSNhJv8nJn7OOO9yd/+jygYZ+NtX"
+
+# List of Confluent servers
+# NOTE: in reverse order to run ansible from the last node in the servers list
+servers = [
+#  { :hostname => "cpn03", :hostonly_ip => "192.168.168.73", :bridged_ip => "192.168.1.73", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2},
+#  { :hostname => "cpn02", :hostonly_ip => "192.168.168.72", :bridged_ip => "192.168.1.72", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2},
+  { :hostname => "cpn01", :hostonly_ip => "192.168.168.71", :bridged_ip => "192.168.1.71", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2}
+]
+
+
+Vagrant.configure(2) do |config|
+  if Vagrant.has_plugin?("vagrant-hostmanager")
+    config.hostmanager.enabled = true
+    config.hostmanager.manage_host = true
+    config.hostmanager.manage_guest = true
+    config.hostmanager.ignore_private_ip = false
+    config.hostmanager.include_offline = false
+  end #end if
+
+
+  # Configure the servers
+  servers.each_with_index do |server, index|
+
+      
+    # Create hosts file on all the servers
+    config.vm.provision :shell, inline: "sudo echo #{server[:hostonly_ip]} #{server[:hostname]} | sudo tee -a /etc/hosts"
+
+    # Add the cp-ansible template yaml files to the box
+    config.vm.provision "file", source: "templates/", destination: "/tmp/cp-ansible-templates"
+
+    box_image = server[:box] ? server[:box] : box;
+    config.vm.define server[:hostname] do |conf|
+
+      conf.vm.box = box_image.to_s
+      conf.vm.hostname = server[:hostname]
+
+      # Host only network config
+      net_config_hostonly = {}
+      if server[:hostonly_ip] != "dhcp"
+        net_config_hostonly[:ip] = server[:hostonly_ip]
+        net_config_hostonly[:netmask] = server[:netmask] || "255.255.255.0"
+      else
+        net_config_hostonly[:type] = "dhcp"
+      end
+      conf.vm.network "private_network", net_config_hostonly
+
+      # Bridged network config
+      net_config_bridged = {}
+      net_config_bridged[:bridge] = server[:bridged_adapter]
+      if server[:bridged_ip] != "dhcp"
+        net_config_bridged[:ip] = server[:bridged_ip]
+        net_config_bridged[:netmask] = server[:netmask] || "255.255.255.0"
+      else
+        net_config_bridged[:type] = "dhcp"
+      end
+      conf.vm.network "public_network", net_config_bridged
+
+      # Configure the machine CPU and memory
+      cpu = server[:cpu] ? server[:cpu] : 1;
+      memory = server[:ram] ? server[:ram] : 512;
+      conf.vm.provider "virtualbox" do |vb|
+        vb.customize ["modifyvm", :id, "--cpus", cpu.to_s]
+        vb.customize ["modifyvm", :id, "--memory", memory.to_s]
+        vb.name = server[:hostname] + "_" + server[:bridged_ip]
+      end
+
+      # Add the private and public key for keyless ssh between the servers
+      conf.ssh.private_key_path = ["~/.vagrant.d/insecure_private_key", ssh_key]
+      conf.ssh.insert_key = false
+      conf.vm.provision "file", source: ssh_key , destination: "~/.ssh/id_rsa"
+      conf.vm.provision "file", source: ssh_key + ".pub", destination: "~/.ssh/authorized_keys"
+
+      # Also add my personal public key to the authorized keys file
+      conf.vm.provision :shell, inline: "echo #{ssh_public_key} >> ~/.ssh/authorized_keys", privileged: false
+
+      # Add the private and public key for the root user as well to run ansible as root
+      conf.vm.provision "shell", inline: <<-EOF
+        sudo mkdir -p /root/.ssh/
+        sudo cp /home/vagrant/.ssh/id_rsa /root/.ssh/id_rsa
+        sudo cat /home/vagrant/.ssh/authorized_keys >> /root/.ssh/authorized_keys
+      EOF
+
+      # Remove 127.0.0.1 <hostname> from /etc/hosts to allow correct IP lookup
+      conf.vm.provision :shell, inline: "sed -i'' '/^127.0.0.1\\t#{conf.vm.hostname}\\t#{conf.vm.hostname}$/d' /etc/hosts"
+
+      # Install basic tools on all nodes
+      conf.vm.provision "shell", inline: <<-EOF
+        yum install -y epel-release
+        yum install -y net-tools wget jq nc
+      EOF
+
+      # Install Git, Ansible and Confluent
+      if index == servers.size - 1
+        conf.vm.provision :shell, env: {"TEMPLATE"=>ENV['TEMPLATE']}, inline: <<-EOF
+          yum install -y git ansible
+          
+          # Clone Confluent cp-ansible
+          cd ~/
+          if [ ! -d "cp-ansible" ]; then
+            # Clone the project
+            git clone https://github.com/confluentinc/cp-ansible
+          else
+            # Update the project using git pull
+            cd cp-ansible
+            git pull
+          fi
+
+          # Set the hostname in the yaml file
+          sed -i "s/localhost/$(hostname --fqdn)/g" /tmp/cp-ansible-templates/$TEMPLATE
+
+          # Launch the cp-ansible ansible-playbook
+          cd ~/cp-ansible/
+          export ANSIBLE_HOST_KEY_CHECKING=False
+          ansible-playbook -i /tmp/cp-ansible-templates/$TEMPLATE all.yml
+
+          # Install confluent cli
+          curl -L https://cnfl.io/cli | sh -s -- -b /usr/local/bin/
+
+          # Install confluent-hub
+          yum install -y confluent-hub-client
+        EOF
+      end #end if
+    end #end conf    
+  end #end servers
+end #end config
