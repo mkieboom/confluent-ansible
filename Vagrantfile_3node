@@ -14,8 +14,8 @@ ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8c3uZAc1s+uxfaKdmWbAzxh
 # List of Confluent servers
 # NOTE: in reverse order to run ansible from the last node in the servers list
 servers = [
-  # { :hostname => "cpn03", :hostonly_ip => "192.168.168.73", :bridged_ip => "192.168.1.73", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2},
-  # { :hostname => "cpn02", :hostonly_ip => "192.168.168.72", :bridged_ip => "192.168.1.72", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2},
+  { :hostname => "cpn03", :hostonly_ip => "192.168.168.73", :bridged_ip => "192.168.1.73", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2},
+  { :hostname => "cpn02", :hostonly_ip => "192.168.168.72", :bridged_ip => "192.168.1.72", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2},
   { :hostname => "cpn01", :hostonly_ip => "192.168.168.71", :bridged_ip => "192.168.1.71", :bridged_adapter=> "eno1", :ram => 6144, :cpu => 2}
 ]
 
