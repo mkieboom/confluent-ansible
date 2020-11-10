@@ -33,11 +33,13 @@ vi Vagrantfile
 ```
 # Grab the yml filename from the templates folder you would like to apply and specify it as the TEMPLATE
 # For example, for a 1 node cluster without any security run:
-TEMPLATE=1node.yml vagrant up
+VAGRANT_VAGRANTFILE=Vagrantfile_1node TEMPLATE=1node.yml vagrant up
 
 # To run a 1 node environment with SASL SCRAM and mTLS run the following:
-TEMPLATE=1node_sasl_scram_mtls.yml vagrant up
+VAGRANT_VAGRANTFILE=Vagrantfile_1node TEMPLATE=1node_sasl_scram_mtls.yml vagrant up
 
+# To run a 3 node environment without any security run:
+VAGRANT_VAGRANTFILE=Vagrantfile_3node TEMPLATE=3node.yml vagrant up
 ```
 
 #### Ssh into the machine
