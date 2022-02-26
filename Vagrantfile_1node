@@ -122,6 +122,11 @@ Vagrant.configure(2) do |config|
 
           # Launch the cp-ansible ansible-playbook
           cd ~/cp-ansible/
+
+          # Fix for 6.2 release
+          git fetch
+          git checkout 6.2.2-post
+
           export ANSIBLE_HOST_KEY_CHECKING=False
           ansible-playbook -i /tmp/cp-ansible-templates/$TEMPLATE all.yml
 
